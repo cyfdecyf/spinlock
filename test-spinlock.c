@@ -22,6 +22,9 @@
 #include "spinlock-pthread.h"
 #elif defined(CMPXCHG)
 #include "spinlock-cmpxchg.h"
+#elif defined(RTM)
+#include "spinlock-xchg.h"
+#include "rtm.h"
 #else
 #error "must define a spinlock implementation"
 #endif
@@ -98,11 +101,15 @@ static void calc_time(struct timeval *start, struct timeval *end) {
     printf("%ld.%06ld\t", (long)interval.tv_sec, (long)interval.tv_usec);
 }
 
-volatile int counter = 0;
-#ifndef MCS
-spinlock sl;
-#else
+// Use an array of counter to see effect on RTM if touches more memory.
+#define NCOUNTER 1
+
+static int counter[NCOUNTER];
+
+#ifdef MCS
 mcs_lock cnt_lock = NULL;
+#else
+spinlock sl;
 #endif
 
 #ifdef BIND_CORE
@@ -144,14 +151,26 @@ void *inc_thread(void *id) {
 
     /* Start lock unlock test. */
     for (int i = 0; i < n; i++) {
-#ifndef MCS
-        spin_lock(&sl);
-        counter++;
-        spin_unlock(&sl);
-#else
+#ifdef MCS
         lock_mcs(&cnt_lock, &local_lock);
-        counter++;
+        for (int j = 0; j < NCOUNTER; j++) counter[j]++;
         unlock_mcs(&cnt_lock, &local_lock);
+#elif RTM
+        int status;
+        if ((status = _xbegin()) == _XBEGIN_STARTED) {
+            for (int j = 0; j < NCOUNTER; j++) counter[j]++;
+            if (sl == BUSY)
+                _xabort(1);
+            _xend();
+        } else {
+            spin_lock(&sl);
+            for (int j = 0; j < NCOUNTER; j++) counter[j]++;
+            spin_unlock(&sl);
+        }
+#else
+        spin_lock(&sl);
+        for (int j = 0; j < NCOUNTER; j++) counter[j]++;
+        spin_unlock(&sl);
 #endif
     }
 
@@ -186,13 +205,13 @@ int main(int argc, const char *argv[])
     for (long i = 0; i < nthr; i++)
         pthread_join(thr[i], NULL);
 
-    if (counter == N_PAIR) {
-        /*printf("correct\n");*/
-        calc_time(&start_time, &end_time);
-        ret = 0;
-    } else {
-        printf("error\n");
-        ret = 1;
+    calc_time(&start_time, &end_time);
+    for (int i = 0; i < NCOUNTER; i++) {
+        if (counter[i] == N_PAIR) {
+        } else {
+            printf("counter %d error\n", i);
+            ret = 1;
+        }
     }
 
     return ret;
