@@ -3,7 +3,7 @@ LDFLAGS = -lpthread
 
 programs = test-spinlock-cmpxchg test-spinlock-xchg test-spinlock-k42 \
 		   test-spinlock-mcs test-spinlock-ticket test-spinlock-pthread \
-		   test-spinlock-xchg-backoff test-rtm
+		   test-spinlock-xchg-backoff test-rtm test-spinlock-xchg-hle
 
 all: $(programs)
 
@@ -27,6 +27,9 @@ test-spinlock-pthread: test-spinlock.c
 
 test-spinlock-xchg-backoff: test-spinlock.c
 	$(CC) $(CFLAGS) -DXCHGBACKOFF $^ -o $@ $(LDFLAGS)
+
+test-spinlock-xchg-hle: test-spinlock.c
+	$(CC) $(CFLAGS) -DHLE $^ -o $@ $(LDFLAGS)
 
 test-rtm: test-spinlock.c
 	$(CC) $(CFLAGS) -DRTM $^ -o $@ $(LDFLAGS)

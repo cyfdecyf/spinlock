@@ -25,6 +25,8 @@
 #elif defined(RTM)
 #include "spinlock-xchg.h"
 #include "rtm.h"
+#elif defined(HLE)
+#include "spinlock-xchg-hle.h"
 #else
 #error "must define a spinlock implementation"
 #endif
@@ -104,7 +106,10 @@ static void calc_time(struct timeval *start, struct timeval *end) {
 // Use an array of counter to see effect on RTM if touches more memory.
 #define NCOUNTER 1
 
-static int counter[NCOUNTER];
+// Use thread local counter to avoid cache contention between cores.
+// For TSX, this avoids TX conflicts so the performance overhead/improvement is
+// due to TSX mechanism.
+static __thread int counter[NCOUNTER];
 
 #ifdef MCS
 mcs_lock cnt_lock = NULL;
@@ -206,13 +211,15 @@ int main(int argc, const char *argv[])
         pthread_join(thr[i], NULL);
 
     calc_time(&start_time, &end_time);
-    for (int i = 0; i < NCOUNTER; i++) {
-        if (counter[i] == N_PAIR) {
-        } else {
-            printf("counter %d error\n", i);
-            ret = 1;
-        }
-    }
+    /*
+     *for (int i = 0; i < NCOUNTER; i++) {
+     *    if (counter[i] == N_PAIR) {
+     *    } else {
+     *        printf("counter %d error\n", i);
+     *        ret = 1;
+     *    }
+     *}
+     */
 
     return ret;
 }
