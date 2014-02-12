@@ -103,13 +103,14 @@ static void calc_time(struct timeval *start, struct timeval *end) {
     printf("%ld.%06ld\t", (long)interval.tv_sec, (long)interval.tv_usec);
 }
 
-// Use an array of counter to see effect on RTM if touches more memory.
+// Use an array of counter to see effect on RTM if touches more cache line.
 #define NCOUNTER 1
+#define CACHE_LINE 64
 
 // Use thread local counter to avoid cache contention between cores.
 // For TSX, this avoids TX conflicts so the performance overhead/improvement is
 // due to TSX mechanism.
-static __thread int counter[NCOUNTER];
+static __thread int8_t counter[CACHE_LINE*NCOUNTER];
 
 #ifdef MCS
 mcs_lock cnt_lock = NULL;
@@ -158,23 +159,23 @@ void *inc_thread(void *id) {
     for (int i = 0; i < n; i++) {
 #ifdef MCS
         lock_mcs(&cnt_lock, &local_lock);
-        for (int j = 0; j < NCOUNTER; j++) counter[j]++;
+        for (int j = 0; j < NCOUNTER; j++) counter[j*CACHE_LINE]++;
         unlock_mcs(&cnt_lock, &local_lock);
 #elif RTM
         int status;
         if ((status = _xbegin()) == _XBEGIN_STARTED) {
-            for (int j = 0; j < NCOUNTER; j++) counter[j]++;
+            for (int j = 0; j < NCOUNTER; j++) counter[j*CACHE_LINE]++;
             if (sl == BUSY)
                 _xabort(1);
             _xend();
         } else {
             spin_lock(&sl);
-            for (int j = 0; j < NCOUNTER; j++) counter[j]++;
+            for (int j = 0; j < NCOUNTER; j++) counter[j*CACHE_LINE]++;
             spin_unlock(&sl);
         }
 #else
         spin_lock(&sl);
-        for (int j = 0; j < NCOUNTER; j++) counter[j]++;
+        for (int j = 0; j < NCOUNTER; j++) counter[j*CACHE_LINE]++;
         spin_unlock(&sl);
 #endif
     }
