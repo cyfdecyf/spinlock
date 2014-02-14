@@ -25,6 +25,11 @@ SPINLOCK_ATTR char __testandset(spinlock *p)
 SPINLOCK_ATTR void spin_lock(spinlock *lock)
 {
     while (__testandset(lock)) {
+        /* Should wait until lock is free before another try.
+         * cmpxchg is write to cache, competing write for a sinlge cache line
+         * would generate large amount of cache traffic. That's why this
+         * implementation is not scalable compared to xchg based one. Otherwise,
+         * they should have similar performance. */
         cpu_relax();
     }
 }
